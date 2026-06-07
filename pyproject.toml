@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ask-survey"
+version = "0.1.0"
+description = "Survey review analyzer for topic modeling, sentiment analysis, and RAG queries"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pandas",
+  "openpyxl",
+  "tqdm",
+  "torch",
+  "transformers",
+  "bitsandbytes",
+  "accelerate",
+  "langchain",
+  "langchain-community",
+  "langchain-experimental",
+  "langchain-openai",
+  "langchain-huggingface",
+  "faiss-cpu",
+  "rerankers",
+  "python-dotenv",
+]
+
+[project.scripts]
+ask-survey = "cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

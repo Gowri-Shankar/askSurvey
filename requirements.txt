@@ -1,0 +1,16 @@
+pandas
+openpyxl
+tqdm
+torch
+transformers
+bitsandbytes
+accelerate
+langchain
+langchain-community
+langchain-experimental
+langchain-openai
+langchain-huggingface
+faiss-cpu
+rerankers
+python-dotenv
+pytest
