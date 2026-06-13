@@ -29,7 +29,10 @@ class QueryRouter:
         self.metrics_agent = metrics_agent
         self.rag_engine = rag_engine
 
-        from langchain.schema import SystemMessage, HumanMessage as _HumanMessage  # noqa: F401
+        try:
+            from langchain_core.messages import SystemMessage, HumanMessage as _HumanMessage
+        except ImportError:
+            from langchain.schema import SystemMessage, HumanMessage as _HumanMessage
         self._HumanMessage = _HumanMessage
         self.system_prompt = SystemMessage(
             content="You are a routing assistant. You must choose exactly one label: `rerank_insight` or `pandas_metric`."

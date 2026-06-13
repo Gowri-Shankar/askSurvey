@@ -9,6 +9,13 @@ import pandas as pd
 # PythonAstREPLTool (used by create_pandas_dataframe_agent) requires Python >=3.9.
 _PANDAS_AGENT_SUPPORTED = sys.version_info >= (3, 9)
 
+# AgentType was removed in LangChain 0.2+; fall back to the underlying string values.
+try:
+    from langchain.agents import AgentType as _AgentType  # removed in LangChain 0.2+
+    _AGENT_OPENAI_FUNCTIONS = _AgentType.OPENAI_FUNCTIONS
+except (ImportError, AttributeError):
+    _AGENT_OPENAI_FUNCTIONS = "openai-functions"
+
 
 def _df_schema(df: pd.DataFrame, max_cats: int = 8) -> str:
     """Build a concise schema string for prompting the LLM."""
@@ -54,10 +61,8 @@ class MetricsAgent:
             LLM used for expression-eval prompting on Python <3.9 (e.g.
             ``_LocalChatAdapter``). Falls back to ``llm`` if not provided.
         """
-        from langchain.agents.agent_types import AgentType
-
         if agent_type is None:
-            agent_type = AgentType.OPENAI_FUNCTIONS
+            agent_type = _AGENT_OPENAI_FUNCTIONS
 
         self.dataframe = dataframe
         self.llm = llm

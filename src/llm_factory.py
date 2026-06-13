@@ -15,6 +15,15 @@ from typing import Optional
 
 from config import LLMConfig
 
+# AgentType was removed in LangChain 0.2+; fall back to the underlying string values.
+try:
+    from langchain.agents import AgentType as _AgentType  # removed in LangChain 0.2+
+    _AGENT_OPENAI_FUNCTIONS = _AgentType.OPENAI_FUNCTIONS
+    _AGENT_ZERO_SHOT_REACT = _AgentType.ZERO_SHOT_REACT_DESCRIPTION
+except (ImportError, AttributeError):
+    _AGENT_OPENAI_FUNCTIONS = "openai-functions"
+    _AGENT_ZERO_SHOT_REACT = "zero-shot-react-description"
+
 
 class _ChatMessage:
     """Minimal response object with a .content attribute, matching ChatOpenAI output."""
@@ -97,7 +106,6 @@ class LLMProvider:
 
 
 def _build_openai_provider(cfg: LLMConfig, openai_api_key: Optional[str]) -> LLMProvider:
-    from langchain.agents.agent_types import AgentType
     from langchain_openai import ChatOpenAI
 
     llm = ChatOpenAI(
@@ -108,13 +116,11 @@ def _build_openai_provider(cfg: LLMConfig, openai_api_key: Optional[str]) -> LLM
     return LLMProvider(
         chat_llm=llm,
         agent_llm=llm,
-        agent_type=AgentType.OPENAI_FUNCTIONS,
+        agent_type=_AGENT_OPENAI_FUNCTIONS,
     )
 
 
 def _build_local_provider(cfg: LLMConfig) -> LLMProvider:
-    from langchain.agents.agent_types import AgentType
-
     try:
         from langchain_huggingface import HuggingFacePipeline
     except ImportError:  # fall back to the (deprecated) community location
@@ -148,7 +154,7 @@ def _build_local_provider(cfg: LLMConfig) -> LLMProvider:
     return LLMProvider(
         chat_llm=chat_llm,
         agent_llm=hf_llm,
-        agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        agent_type=_AGENT_ZERO_SHOT_REACT,
     )
 
 

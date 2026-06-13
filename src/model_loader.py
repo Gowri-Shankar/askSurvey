@@ -1,7 +1,14 @@
 """Model loading utilities for Hugging Face pipelines."""
 
 import torch
+import transformers
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+
+# transformers 4.40+ has native Phi-3 support — trust_remote_code downloads a
+# custom modeling_phi3.py that has rope_scaling key bugs with newer transformers.
+# Use the built-in implementation on 4.40+; fall back to remote code on older versions.
+_transformers_version = tuple(int(x) for x in transformers.__version__.split(".")[:2])
+_NEED_TRUST_REMOTE_CODE = _transformers_version < (4, 40)
 
 
 def load_text_generation_pipeline(
@@ -26,11 +33,13 @@ def load_text_generation_pipeline(
         elif use_8bit:
             quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, trust_remote_code=_NEED_TRUST_REMOTE_CODE
+    )
 
     model_kwargs = {
         "torch_dtype": dtype,
-        "trust_remote_code": True,
+        "trust_remote_code": _NEED_TRUST_REMOTE_CODE,
     }
 
     if quantization_config:

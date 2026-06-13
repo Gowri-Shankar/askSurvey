@@ -124,7 +124,10 @@ class RAGInsightEngine:
         embedding_device: str = "cpu",
         reranker_device: str = "cpu",
     ):
-        from langchain.prompts import PromptTemplate
+        try:
+            from langchain_core.prompts import PromptTemplate
+        except ImportError:
+            from langchain.prompts import PromptTemplate
 
         self.vectorstore = load_faiss_vectorstore(
             faiss_index_path,

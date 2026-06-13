@@ -95,7 +95,10 @@ ROUTER_EXAMPLES = [
 
 def build_router_prompt(question: str) -> list:
     """Build the router prompt with examples."""
-    from langchain.schema import SystemMessage, HumanMessage
+    try:
+        from langchain_core.messages import SystemMessage, HumanMessage
+    except ImportError:
+        from langchain.schema import SystemMessage, HumanMessage
 
     messages = [SystemMessage(content=ROUTER_SYSTEM_PROMPT)]
 
