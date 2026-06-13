@@ -1,7 +1,9 @@
 """Query router for directing questions to appropriate handler."""
 
-from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from langchain_openai import ChatOpenAI
 
 
 def normalize_route_label(label: str) -> str:
@@ -19,7 +21,7 @@ class QueryRouter:
 
     def __init__(
         self,
-        llm: ChatOpenAI,
+        llm: "ChatOpenAI",
         metrics_agent,
         rag_engine,
     ):
@@ -27,6 +29,8 @@ class QueryRouter:
         self.metrics_agent = metrics_agent
         self.rag_engine = rag_engine
 
+        from langchain.schema import SystemMessage, HumanMessage as _HumanMessage  # noqa: F401
+        self._HumanMessage = _HumanMessage
         self.system_prompt = SystemMessage(
             content="You are a routing assistant. You must choose exactly one label: `rerank_insight` or `pandas_metric`."
         )
@@ -39,6 +43,7 @@ class QueryRouter:
 
     def classify_question(self, question: str) -> str:
         """Classify a question to determine routing."""
+        HumanMessage = self._HumanMessage
         messages = [self.system_prompt]
 
         for q, lbl in self.examples:

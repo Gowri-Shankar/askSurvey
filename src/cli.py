@@ -23,7 +23,6 @@ from model_loader import load_text_generation_pipeline
 from preprocessing import clean_text_column
 from rag import RAGInsightEngine
 from router import QueryRouter
-from langchain_openai import ChatOpenAI
 
 
 def _str2bool(value: str) -> bool:
@@ -48,9 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     classify_parser.add_argument("--review-column", default="Reviews", help="Review text column name")
     classify_parser.add_argument("--topic-lookup-column", default="Sub-Topic", help="Topic lookup column name")
     classify_parser.add_argument("--model-name", default=DEFAULT_CLASSIFICATION_MODEL, help="HF model name")
-    classify_parser.add_argument("--max-new-tokens", type=int, default=246)
+    classify_parser.add_argument("--max-new-tokens", type=int, default=64)
     classify_parser.add_argument("--temperature", type=float, default=0.2)
-    classify_parser.add_argument("--use-8bit", type=_str2bool, default=True)
+    classify_parser.add_argument("--use-4bit", type=_str2bool, default=True)
+    classify_parser.add_argument("--use-8bit", type=_str2bool, default=False)
     classify_parser.add_argument("--allow-cpu-offload", type=_str2bool, default=False)
 
     query_parser = subparsers.add_parser("query", help="Route a question to metric or insight pipeline")
@@ -78,6 +78,7 @@ def run_classify(args: argparse.Namespace) -> None:
         topic_lookup_column=args.topic_lookup_column,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
+        use_4bit=args.use_4bit,
         use_8bit=args.use_8bit,
         allow_cpu_offload=args.allow_cpu_offload,
     )
@@ -87,6 +88,7 @@ def run_classify(args: argparse.Namespace) -> None:
 
     pipe = load_text_generation_pipeline(
         cfg.model_name,
+        use_4bit=cfg.use_4bit,
         use_8bit=cfg.use_8bit,
         allow_cpu_offload=cfg.allow_cpu_offload,
     )
@@ -147,6 +149,7 @@ def run_query(args: argparse.Namespace) -> None:
         max_tokens=query_cfg.openai_max_tokens,
     )
 
+    from langchain_openai import ChatOpenAI
     router_llm = ChatOpenAI(
         model=query_cfg.openai_model,
         temperature=0.0,

@@ -3,9 +3,10 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 
-DEFAULT_CLASSIFICATION_MODEL = "google/gemma-2-9b-it"
+DEFAULT_CLASSIFICATION_MODEL = "microsoft/Phi-3-mini-4k-instruct"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_RERANKER_MODEL = "mixedbread-ai/mxbai-rerank-large-v1"
 DEFAULT_OPENAI_MODEL = "gpt-3.5-turbo"
@@ -27,14 +28,15 @@ class ClassificationConfig:
     """Configuration for topic/sentiment classification."""
     model_name: str = DEFAULT_CLASSIFICATION_MODEL
     input_path: Path = Path("review_data.xlsx")
-    topics_path: Path | None = None
+    topics_path: Optional[Path] = None
     output_path: Path = Path("classification_results.xlsx")
     review_column: str = "Reviews"
     topic_lookup_column: str = "Sub-Topic"
     batch_size: int = 1
-    max_new_tokens: int = 246
+    max_new_tokens: int = 64
     temperature: float = 0.2
-    use_8bit: bool = True
+    use_4bit: bool = True
+    use_8bit: bool = False
     allow_cpu_offload: bool = False
 
 

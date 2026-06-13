@@ -1,9 +1,12 @@
 """Classification logic for topic/sentiment analysis."""
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import pandas as pd
-from transformers.pipelines import Pipeline
+
+if TYPE_CHECKING:
+    from transformers.pipelines import Pipeline
 
 
 @dataclass
@@ -12,10 +15,10 @@ class ClassificationResult:
     topic: str
     sentiment: str
     raw_response: str
-    error: str | None = None
+    error: Optional[str] = None
 
 
-def parse_classification_response(response: str) -> tuple[str, str]:
+def parse_classification_response(response: str) -> Tuple[str, str]:
     """Parse model response into topic and sentiment."""
     response = response.strip()
 
@@ -43,17 +46,32 @@ def parse_classification_response(response: str) -> tuple[str, str]:
     return "Error", "Error"
 
 
+def _build_prompt(pipe: "Pipeline", review_text: str) -> str:
+    """Build prompt applying chat template if the tokenizer supports it."""
+    from prompts import build_classification_prompt
+
+    instruction = build_classification_prompt(str(review_text))
+    tokenizer = pipe.tokenizer
+
+    if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
+        messages = [{"role": "user", "content": instruction}]
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    return instruction
+
+
 def classify_review(
-    pipe: Pipeline,
+    pipe: "Pipeline",
     review_text: str,
-    max_new_tokens: int = 246,
+    max_new_tokens: int = 64,
     temperature: float = 0.2,
 ) -> ClassificationResult:
     """Classify a single review."""
-    from prompts import build_classification_prompt
-
     try:
-        prompt = build_classification_prompt(str(review_text))
+        prompt = _build_prompt(pipe, review_text)
         result = pipe(
             prompt,
             max_new_tokens=max_new_tokens,
@@ -81,7 +99,7 @@ def classify_review(
 
 def classify_dataframe(
     df: pd.DataFrame,
-    pipe: Pipeline,
+    pipe: "Pipeline",
     review_column: str = "Reviews",
     max_new_tokens: int = 246,
     temperature: float = 0.2,
@@ -89,8 +107,10 @@ def classify_dataframe(
     """Classify all reviews in a DataFrame."""
     df = df.copy()
 
+    from tqdm import tqdm
+
     results = []
-    for idx, row in df.iterrows():
+    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Classifying"):
         review_text = row.get(review_column, "")
         result = classify_review(pipe, review_text, max_new_tokens, temperature)
         results.append(result)

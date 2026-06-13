@@ -6,7 +6,8 @@ from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, BitsAndB
 
 def load_text_generation_pipeline(
     model_name: str,
-    use_8bit: bool = True,
+    use_4bit: bool = True,
+    use_8bit: bool = False,
     allow_cpu_offload: bool = False,
 ):
     """Load a Hugging Face text-generation pipeline."""
@@ -14,8 +15,16 @@ def load_text_generation_pipeline(
     dtype = torch.float16 if device == "cuda" else torch.float32
 
     quantization_config = None
-    if use_8bit and device == "cuda":
-        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+    if device == "cuda":
+        if use_4bit:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+        elif use_8bit:
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
@@ -29,13 +38,18 @@ def load_text_generation_pipeline(
 
     if device == "cuda":
         model_kwargs["device_map"] = "auto"
-        if allow_cpu_offload:
+        if use_8bit and allow_cpu_offload:
             model_kwargs["llm_int8_enable_fp32_cpu_offload"] = True
     else:
         model_kwargs["device_map"] = None
 
     model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
-    pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        return_full_text=False,
+    )
 
     return pipe

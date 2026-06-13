@@ -2,9 +2,10 @@
 
 import pandas as pd
 from pathlib import Path
+from typing import Union
 
 
-def load_table(path: str | Path) -> pd.DataFrame:
+def load_table(path: Union[str, Path]) -> pd.DataFrame:
     """Load a table from Excel or CSV file."""
     path = Path(path)
     suffix = path.suffix.lower()
@@ -17,7 +18,7 @@ def load_table(path: str | Path) -> pd.DataFrame:
         raise ValueError(f"Unsupported file format: {suffix}. Supported: .xlsx, .xls, .csv")
 
 
-def save_table(df: pd.DataFrame, path: str | Path) -> None:
+def save_table(df: pd.DataFrame, path: Union[str, Path]) -> None:
     """Save a DataFrame to Excel or CSV file."""
     path = Path(path)
     suffix = path.suffix.lower()

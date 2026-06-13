@@ -2,25 +2,28 @@
 
 import warnings
 from pathlib import Path
+from typing import Union
 
-from langchain.prompts import PromptTemplate
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI
-from rerankers import Reranker
+from typing import TYPE_CHECKING
 
 from prompts import RAG_PROMPT_TEMPLATE
+
+if TYPE_CHECKING:
+    from langchain_community.vectorstores import FAISS
+    from rerankers import Reranker
 
 
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
 
 
 def load_faiss_vectorstore(
-    index_path: str | Path,
+    index_path: Union[str, Path],
     embedding_model_name: str,
     allow_dangerous_deserialization: bool = True,
-) -> FAISS:
+) -> "FAISS":
     """Load FAISS vector store from disk."""
+    from langchain_community.vectorstores import FAISS
+    from langchain_huggingface import HuggingFaceEmbeddings
     embedding_model = HuggingFaceEmbeddings(model_name=embedding_model_name)
     return FAISS.load_local(
         str(index_path),
@@ -32,7 +35,7 @@ def load_faiss_vectorstore(
 def rerank_documents(
     question: str,
     docs: list,
-    reranker: Reranker,
+    reranker: "Reranker",
     top_k: int = 10,
 ) -> list:
     """Rerank retrieved documents using cross-encoder."""
@@ -62,7 +65,7 @@ class RAGInsightEngine:
 
     def __init__(
         self,
-        faiss_index_path: str | Path,
+        faiss_index_path: Union[str, Path],
         embedding_model_name: str,
         reranker_model: str,
         openai_model: str,
@@ -72,6 +75,10 @@ class RAGInsightEngine:
         temperature: float = 0.2,
         max_tokens: int = 256,
     ):
+        from langchain.prompts import PromptTemplate
+        from langchain_openai import ChatOpenAI
+        from rerankers import Reranker
+
         self.vectorstore = load_faiss_vectorstore(
             faiss_index_path,
             embedding_model_name,
