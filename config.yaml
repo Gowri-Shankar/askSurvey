@@ -1,0 +1,23 @@
+# askSurvey query-pipeline configuration.
+# Selects the LLM backend and the RAG/query settings. CLI flags override these.
+
+llm:
+  provider: local                # "openai" | "local"
+  openai_model: gpt-3.5-turbo     # used when provider: openai (needs OPENAI_API_KEY)
+  local_model: microsoft/Phi-3-mini-4k-instruct   # used when provider: local
+  temperature: 0.2
+  max_new_tokens: 256
+  use_4bit: true                  # 4-bit quantization for the local model (fits 4 GB GPU)
+  use_8bit: false
+  allow_cpu_offload: false
+
+query:
+  reviews_path: results_10.xlsx   # table the metric agent queries
+  review_column: text             # text column used to build the FAISS index
+  faiss_index: faiss_results10    # FAISS index directory (build with scripts/build_faiss_index.py)
+  embedding_model: BAAI/bge-small-en-v1.5
+  reranker_model: cross-encoder/ms-marco-MiniLM-L-6-v2   # light; fits 4 GB beside Phi-3
+  embedding_device: cpu           # keep embeddings/reranker on CPU to reserve VRAM for Phi-3
+  reranker_device: cpu
+  top_k_retrieve: 50
+  top_k_context: 5

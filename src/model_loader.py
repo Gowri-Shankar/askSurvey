@@ -37,9 +37,15 @@ def load_text_generation_pipeline(
         model_kwargs["quantization_config"] = quantization_config
 
     if device == "cuda":
-        model_kwargs["device_map"] = "auto"
-        if use_8bit and allow_cpu_offload:
+        if quantization_config:
+            # Force all quantized layers onto the single GPU — auto-dispatch
+            # would try to split between CPU/GPU which bitsandbytes doesn't support.
+            model_kwargs["device_map"] = "cuda:0"
+        elif allow_cpu_offload:
+            model_kwargs["device_map"] = "auto"
             model_kwargs["llm_int8_enable_fp32_cpu_offload"] = True
+        else:
+            model_kwargs["device_map"] = "auto"
     else:
         model_kwargs["device_map"] = None
 

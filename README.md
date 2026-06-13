@@ -7,8 +7,13 @@ Python CLI and package for e-commerce review analysis — topic classification, 
 | Capability | Model / Tool |
 |---|---|
 | Topic + sentiment classification | `microsoft/Phi-3-mini-4k-instruct` (4-bit, local GPU) |
-| Quantitative metric queries | LangChain pandas agent + GPT |
-| Qualitative RAG insights | FAISS + cross-encoder reranker + GPT |
+| Quantitative metric queries | LangChain pandas agent + GPT **or** local Phi-3 (ReAct) |
+| Qualitative RAG insights | FAISS + cross-encoder reranker + GPT **or** local Phi-3 |
+
+The query pipeline runs in two interchangeable modes, selected in `config.yaml`:
+
+- **`openai`** — uses `ChatOpenAI` (needs `OPENAI_API_KEY`). Best quality.
+- **`local`** — fully offline, reuses the downloaded Phi-3 model + local embedding/reranker. No API key, no network.
 
 ---
 
@@ -71,7 +76,10 @@ pip install bitsandbytes --prefer-binary \
 
 ```bash
 pip install -e .
-pip install transformers accelerate openpyxl tqdm
+pip install transformers accelerate openpyxl tqdm pyyaml
+
+# For offline query/RAG mode (local embeddings, reranker, vector store):
+pip install langchain-huggingface sentence-transformers faiss-cpu rerankers
 ```
 
 ### 5. Set your OpenAI API key (query mode only)
@@ -124,14 +132,55 @@ Output columns added to your file:
 python scripts/test_sample.py
 ```
 
-### Query mode (requires OpenAI API key + FAISS index)
+### Query mode (metric + RAG, offline or OpenAI)
+
+The query pipeline routes each question to a **metric agent** (counts, percentages over the
+classified table) or the **RAG engine** (qualitative insights). Both the backend and the
+data paths come from `config.yaml`; CLI flags override the file.
+
+**1. Edit `config.yaml`** — pick the provider and data:
+
+```yaml
+llm:
+  provider: local            # "openai" | "local"
+  local_model: microsoft/Phi-3-mini-4k-instruct
+query:
+  reviews_path: results_10.xlsx
+  review_column: text
+  faiss_index: faiss_results10
+  reranker_model: cross-encoder/ms-marco-MiniLM-L-6-v2   # light; fits 4 GB beside Phi-3
+  embedding_device: cpu      # keep embeddings/reranker on CPU to reserve VRAM for Phi-3
+  reranker_device: cpu
+```
+
+**2. Build a FAISS index** (once, for RAG questions):
 
 ```bash
-ask-survey query \
-  --question "What are common delivery complaints?" \
-  --reviews-csv reviews.csv \
-  --faiss-index faiss_ecom_25k
+python scripts/build_faiss_index.py \
+  --input results_10.xlsx --review-column text \
+  --index-path faiss_results10
 ```
+
+**3. Ask questions:**
+
+```bash
+# Quantitative -> pandas agent
+ask-survey query --question "How many negative reviews are there?"
+
+# Qualitative -> retrieve + rerank + LLM synthesis
+ask-survey query --question "What are common complaints?"
+
+# Override the provider for one run (uses OPENAI_API_KEY)
+ask-survey query --llm-provider openai --question "What percentage are positive?"
+```
+
+> Offline (`local`) mode needs no API key. The first RAG run downloads the embedding
+> (~130 MB) and reranker (~80 MB) models, then runs fully offline. If no FAISS index is
+> present, metric questions still work; RAG questions return a build-the-index hint.
+>
+> **Quality note:** a 3.8B local model running ReAct is reliable for simple counts and
+> percentages over the classified columns, but can wobble on complex aggregations — use
+> `provider: openai` for heavier analytical questions.
 
 ---
 

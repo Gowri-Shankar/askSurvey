@@ -11,18 +11,13 @@ from classification import classify_dataframe
 from config import (
     ClassificationConfig,
     DEFAULT_CLASSIFICATION_MODEL,
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_OPENAI_MODEL,
-    DEFAULT_RERANKER_MODEL,
-    QueryConfig,
+    DEFAULT_CONFIG_PATH,
     get_openai_api_key,
+    load_app_config,
 )
 from data_io import load_table, merge_topic_lookup, save_table
-from metrics_agent import MetricsAgent
 from model_loader import load_text_generation_pipeline
 from preprocessing import clean_text_column
-from rag import RAGInsightEngine
-from router import QueryRouter
 
 
 def _str2bool(value: str) -> bool:
@@ -55,15 +50,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     query_parser = subparsers.add_parser("query", help="Route a question to metric or insight pipeline")
     query_parser.add_argument("--question", required=True, help="Question to answer")
-    query_parser.add_argument("--reviews-csv", required=True, help="Reviews CSV for metric agent")
-    query_parser.add_argument("--faiss-index", required=True, help="FAISS index directory")
-    query_parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL, help="Embedding model name")
-    query_parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL, help="Reranker model name")
-    query_parser.add_argument("--openai-model", default=DEFAULT_OPENAI_MODEL, help="OpenAI chat model")
-    query_parser.add_argument("--top-k-retrieve", type=int, default=100)
-    query_parser.add_argument("--top-k-context", type=int, default=10)
-    query_parser.add_argument("--openai-temperature", type=float, default=0.2)
-    query_parser.add_argument("--openai-max-tokens", type=int, default=256)
+    query_parser.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="Path to config.yaml")
+    query_parser.add_argument("--llm-provider", choices=["openai", "local"], help="Override LLM provider")
+    query_parser.add_argument("--reviews", help="Reviews Excel/CSV for the metric agent")
+    query_parser.add_argument("--reviews-csv", dest="reviews", help="Alias for --reviews")
+    query_parser.add_argument("--review-column", help="Review text column (RAG/index)")
+    query_parser.add_argument("--faiss-index", help="FAISS index directory (optional)")
+    query_parser.add_argument("--embedding-model", help="Embedding model name")
+    query_parser.add_argument("--reranker-model", help="Reranker model name")
+    query_parser.add_argument("--top-k-retrieve", type=int, help="Docs to retrieve before rerank")
+    query_parser.add_argument("--top-k-context", type=int, help="Docs to keep after rerank")
 
     return parser
 
@@ -114,49 +110,79 @@ def run_classify(args: argparse.Namespace) -> None:
     print(f"Saved results to {cfg.output_path}")
 
 
+class _UnavailableRAG:
+    """Placeholder used when no FAISS index / RAG deps are available."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+
+    def answer(self, question: str) -> str:
+        return self.reason
+
+
 def run_query(args: argparse.Namespace) -> None:
-    openai_api_key = get_openai_api_key()
+    from llm_factory import build_llm_provider
+    from metrics_agent import MetricsAgent
+    from router import QueryRouter
 
-    query_cfg = QueryConfig(
-        reviews_csv=Path(args.reviews_csv),
-        faiss_index=Path(args.faiss_index),
-        embedding_model=args.embedding_model,
-        reranker_model=args.reranker_model,
-        openai_model=args.openai_model,
-        top_k_retrieve=args.top_k_retrieve,
-        top_k_context=args.top_k_context,
-        openai_temperature=args.openai_temperature,
-        openai_max_tokens=args.openai_max_tokens,
-    )
+    # dataclass defaults -> config.yaml -> CLI overrides
+    app_cfg = load_app_config(args.config)
+    llm_cfg = app_cfg.llm
+    q_cfg = app_cfg.query
 
-    reviews_df = pd.read_csv(query_cfg.reviews_csv)
+    if args.llm_provider:
+        llm_cfg.provider = args.llm_provider
+    if args.reviews:
+        q_cfg.reviews_path = Path(args.reviews)
+    if args.review_column:
+        q_cfg.review_column = args.review_column
+    if args.faiss_index:
+        q_cfg.faiss_index = Path(args.faiss_index)
+    if args.embedding_model:
+        q_cfg.embedding_model = args.embedding_model
+    if args.reranker_model:
+        q_cfg.reranker_model = args.reranker_model
+    if args.top_k_retrieve is not None:
+        q_cfg.top_k_retrieve = args.top_k_retrieve
+    if args.top_k_context is not None:
+        q_cfg.top_k_context = args.top_k_context
+
+    openai_api_key = get_openai_api_key() if llm_cfg.provider == "openai" else None
+    provider = build_llm_provider(llm_cfg, openai_api_key)
+
+    reviews_df = load_table(q_cfg.reviews_path)
     metrics_agent = MetricsAgent(
         dataframe=reviews_df,
-        openai_api_key=openai_api_key,
-        model_name=query_cfg.openai_model,
-        temperature=0.0,
+        llm=provider.agent_llm,
+        agent_type=provider.agent_type,
+        chat_llm=provider.chat_llm,
     )
 
-    rag_engine = RAGInsightEngine(
-        faiss_index_path=query_cfg.faiss_index,
-        embedding_model_name=query_cfg.embedding_model,
-        reranker_model=query_cfg.reranker_model,
-        openai_model=query_cfg.openai_model,
-        openai_api_key=openai_api_key,
-        top_k_retrieve=query_cfg.top_k_retrieve,
-        top_k_context=query_cfg.top_k_context,
-        temperature=query_cfg.openai_temperature,
-        max_tokens=query_cfg.openai_max_tokens,
-    )
+    # RAG is optional: only build it when an index exists and deps import.
+    if q_cfg.faiss_index and Path(q_cfg.faiss_index).exists():
+        try:
+            from rag import RAGInsightEngine
+            rag_engine = RAGInsightEngine(
+                faiss_index_path=q_cfg.faiss_index,
+                embedding_model_name=q_cfg.embedding_model,
+                reranker_model=q_cfg.reranker_model,
+                llm=provider.chat_llm,
+                top_k_retrieve=q_cfg.top_k_retrieve,
+                top_k_context=q_cfg.top_k_context,
+                embedding_device=q_cfg.embedding_device,
+                reranker_device=q_cfg.reranker_device,
+            )
+        except Exception as exc:  # noqa: BLE001
+            rag_engine = _UnavailableRAG(
+                f"RAG unavailable ({exc}). Install RAG deps and rebuild the index."
+            )
+    else:
+        rag_engine = _UnavailableRAG(
+            "RAG unavailable: no FAISS index found at "
+            f"'{q_cfg.faiss_index}'. Build one with scripts/build_faiss_index.py."
+        )
 
-    from langchain_openai import ChatOpenAI
-    router_llm = ChatOpenAI(
-        model=query_cfg.openai_model,
-        temperature=0.0,
-        api_key=openai_api_key,
-    )
-
-    router = QueryRouter(router_llm, metrics_agent, rag_engine)
+    router = QueryRouter(provider.chat_llm, metrics_agent, rag_engine)
     answer = router.answer(args.question)
     print(answer)
 

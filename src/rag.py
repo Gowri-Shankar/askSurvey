@@ -10,21 +10,71 @@ from prompts import RAG_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from langchain_community.vectorstores import FAISS
-    from rerankers import Reranker
 
 
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
+
+
+def _load_reranker(model_name: str, device: str = "cpu"):
+    """Load a cross-encoder reranker, falling back gracefully on Python <3.9.
+
+    ``rerankers`` uses ``list[str]`` annotations (Python 3.9+ syntax) in its
+    ColBERT module which causes an import-time TypeError on Python 3.8.  When
+    that happens we fall back to ``langchain_community``'s HuggingFaceCrossEncoder
+    which exposes a compatible ``.rank()`` interface via a thin wrapper.
+    """
+    try:
+        from rerankers import Reranker
+        return Reranker(model_name=model_name, model_type="cross-encoder", device=device)
+    except TypeError:
+        # Python 3.8: rerankers ColBERT uses 3.9+ annotation syntax at import time.
+        return _LangChainCrossEncoderWrapper(model_name, device)
+
+
+class _RankResult:
+    """Minimal rank-result matching the rerankers.results.Result interface."""
+
+    __slots__ = ("doc_id", "score")
+
+    def __init__(self, doc_id: int, score: float):
+        self.doc_id = doc_id
+        self.score = score
+
+
+class _LangChainCrossEncoderWrapper:
+    """Wraps HuggingFaceCrossEncoder to present the rerankers.Reranker.rank() API."""
+
+    def __init__(self, model_name: str, device: str = "cpu"):
+        from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+        self._model = HuggingFaceCrossEncoder(
+            model_name=model_name,
+            model_kwargs={"device": device},
+        )
+
+    def rank(self, query: str, docs: list, doc_ids: list):
+        pairs = [[query, doc] for doc in docs]
+        scores = self._model.score(pairs)
+        results = sorted(
+            [_RankResult(doc_id=doc_ids[i], score=float(scores[i])) for i in range(len(docs))],
+            key=lambda r: r.score,
+            reverse=True,
+        )
+        return results
 
 
 def load_faiss_vectorstore(
     index_path: Union[str, Path],
     embedding_model_name: str,
     allow_dangerous_deserialization: bool = True,
+    device: str = "cpu",
 ) -> "FAISS":
     """Load FAISS vector store from disk."""
     from langchain_community.vectorstores import FAISS
     from langchain_huggingface import HuggingFaceEmbeddings
-    embedding_model = HuggingFaceEmbeddings(model_name=embedding_model_name)
+    embedding_model = HuggingFaceEmbeddings(
+        model_name=embedding_model_name,
+        model_kwargs={"device": device},
+    )
     return FAISS.load_local(
         str(index_path),
         embeddings=embedding_model,
@@ -68,28 +118,21 @@ class RAGInsightEngine:
         faiss_index_path: Union[str, Path],
         embedding_model_name: str,
         reranker_model: str,
-        openai_model: str,
-        openai_api_key: str,
+        llm,
         top_k_retrieve: int = 100,
         top_k_context: int = 10,
-        temperature: float = 0.2,
-        max_tokens: int = 256,
+        embedding_device: str = "cpu",
+        reranker_device: str = "cpu",
     ):
         from langchain.prompts import PromptTemplate
-        from langchain_openai import ChatOpenAI
-        from rerankers import Reranker
 
         self.vectorstore = load_faiss_vectorstore(
             faiss_index_path,
             embedding_model_name,
+            device=embedding_device,
         )
-        self.reranker = Reranker(model_name=reranker_model, model_type="cross-encoder")
-        self.llm = ChatOpenAI(
-            model=openai_model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            api_key=openai_api_key,
-        )
+        self.reranker = _load_reranker(reranker_model, device=reranker_device)
+        self.llm = llm
         self.top_k_retrieve = top_k_retrieve
         self.top_k_context = top_k_context
 
@@ -121,4 +164,4 @@ class RAGInsightEngine:
         final_prompt = self.prompt.format(context=context, question=question)
         response = self.llm.invoke(final_prompt)
 
-        return response.content
+        return response.content if hasattr(response, "content") else str(response)

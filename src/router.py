@@ -54,7 +54,8 @@ class QueryRouter:
         messages.append(HumanMessage(content="A:"))
 
         resp = self.llm.invoke(messages)
-        label = resp.content.strip().lower()
+        text = resp.content if hasattr(resp, "content") else str(resp)
+        label = text.strip().lower()
 
         return normalize_route_label(label)
 
