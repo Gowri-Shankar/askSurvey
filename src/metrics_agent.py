@@ -71,7 +71,15 @@ class MetricsAgent:
         self._agent = None
         self._use_expr_eval = False
 
-        if _PANDAS_AGENT_SUPPORTED:
+        # Local HF models (ZERO_SHOT_REACT) don't reliably follow the ReAct
+        # output format — Phi-3 continues generating after "Final Answer" which
+        # breaks the output parser. Use expression-eval for all non-OpenAI agents.
+        _is_local_agent = str(agent_type) in (
+            "zero-shot-react-description",
+            "AgentType.ZERO_SHOT_REACT_DESCRIPTION",
+        )
+
+        if _PANDAS_AGENT_SUPPORTED and not _is_local_agent:
             try:
                 from langchain_experimental.agents import create_pandas_dataframe_agent
                 self._agent = create_pandas_dataframe_agent(
@@ -84,7 +92,7 @@ class MetricsAgent:
             except Exception:
                 self._use_expr_eval = True
         else:
-            # Python <3.9: PythonAstREPLTool not available; use expression-eval mode.
+            # Python <3.9 or local model: use expression-eval mode.
             self._use_expr_eval = True
 
     def _answer_expr(self, question: str) -> str:
